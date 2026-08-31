@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-SRC_DIR = Path("decrypted/objectbuilder")
+SRC_DIR = Path("decrypted/data/things")
 OUT_DIR = Path("objectbuilder")
 
 DAT_SIGNATURE = 0x542143B0  # stock 10.56, registered in OB 0.5.9 versions.xml
@@ -21,6 +21,10 @@ U16_ATTRS = {0x00, 0x09, 0x1A, 0x1D, 0x1E, 0x21, 0x23}
 U32_ATTRS = {0x16, 0x19}
 FLAGS = {1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
          21, 23, 24, 27, 28, 31, 32, 36, 37, 38, 39, 40, 0x28, 0x29}
+# 0x2B is new in the 2026-08-31 build. Its 5-byte payload length was pinned by
+# the exact-EOF identity: L=5 is the only value in 0..32 that makes the dat
+# parse to byte-exact EOF. Re-pin after every client update.
+FIXED_LEN_ATTRS = {0x2B: 5}
 
 
 def parse_dat(data: bytes):
@@ -48,6 +52,8 @@ def parse_dat(data: bytes):
                 pos += 2 + n + 4
             elif a == 0x2A:  # 8 x i16 (per-direction offsets)
                 pos += 16
+            elif a in FIXED_LEN_ATTRS:
+                pos += FIXED_LEN_ATTRS[a]
             else:
                 raise ValueError(f"rid {rid}: unknown attr {a:#x} at {pos - 1:#x}")
 
@@ -228,9 +234,11 @@ def main() -> int:
     cats = parse_dat((SRC_DIR / "things.dat").read_bytes())
     items, creatures, effects, missiles = cats
 
-    # Last 98 item records are outfit data; last 98 creature records are
+    # Last 99 item records are outfit data; last 98 creature records are
     # effect data. Move each block to the front of its real category.
-    OUTFITS_FROM_ITEMS = 98
+    # Both sizes are build-specific: 07-22 = 98/98, 08-31 = 99/98. Re-derive
+    # after every client update.
+    OUTFITS_FROM_ITEMS = 99
     EFFECTS_FROM_CREATURES = 98
     outfits = items[-OUTFITS_FROM_ITEMS:] + creatures[:-EFFECTS_FROM_CREATURES]
     effects = creatures[-EFFECTS_FROM_CREATURES:] + effects
