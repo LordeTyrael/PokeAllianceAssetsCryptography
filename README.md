@@ -1,6 +1,6 @@
 # PokeAlliance — Assets & Cryptography Documentation
 
-PokeAlliance is a PokeTibia (OTClient fork, DirectX build). Its client is `PokeAlliance_dx.exe` (x86-64, base `0x140000000`). Unlike PokeXGames' homebrew Salsa20 scheme, PokeAlliance uses standard crypto — **AES-256-GCM + zlib** via an embedded OpenSSL 3.x EVP — and the key is a 32-byte constant in the binary, masked inside `init.lua`. No dynamic analysis is needed; everything below was verified by decrypting the full installed asset tree (**5,795 files**).
+PokeAlliance is a PokeTibia (OTClient fork, DirectX build). Its client is `PokeAlliance_dx.exe` (x86-64, base `0x140000000`). Unlike PokeXGames' homebrew Salsa20 scheme, PokeAlliance uses standard crypto — **AES-256-GCM + zlib** via an embedded OpenSSL 3.x EVP — and the key is a 32-byte constant in the binary. No dynamic analysis is needed; everything below was verified by decrypting the full installed asset tree (**5,795 files**).
 
 ## 1. The Assets
 
@@ -115,7 +115,7 @@ It is a leftover from the client's build: **no `.ico` file ships with the client
 AES-256-GCM → zlib (RFC 1950)
 ```
 
-**Key (32 bytes) = a constant in the binary's `.rdata`** — one global key for the whole tree, no per-file derivation. `init.lua` carries it masked rather than in the clear.
+**Key (32 bytes) = a constant in the binary's `.rdata`** — one global key for the whole tree, no per-file derivation. `init.lua` carries a masked copy of the same constant.
 
 ### File format
 
@@ -135,7 +135,7 @@ The header is **68 bytes when `flags & 1`**, 20 bytes otherwise. **The AAD is th
 
 ### `init.lua`
 
-The only file with `flags & 1`. Its 32-byte key field is `master XOR SHA256(master || salt)`, and unmasking it reproduces the master constant — the file *stores* the key, it does not derive one.
+The only file with `flags & 1`. Its 32-byte key field is `master XOR SHA256(master || salt)` — the same constant, obfuscated. Unmasking it takes the constant as an input, and `init.lua` is itself encrypted with it, so the binary is still the only source.
 
 ### `things.spr.partN`
 
