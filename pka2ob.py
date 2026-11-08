@@ -9,21 +9,17 @@ from pathlib import Path
 SRC_DIR = Path("decrypted/data/things")
 OUT_DIR = Path("objectbuilder")
 
-DAT_SIGNATURE = 0x542143B0  # stock 10.56, registered in OB 0.5.9 versions.xml
+DAT_SIGNATURE = 0x542143B0  # stock 10.56
 SPR_SIGNATURE = 0x542143DE
 SRC_SPR_SIGNATURE = 0x5D97AB7B
 SRC_DAT_SIGNATURE = 0xBCBCF8F6
 SPRITE_PIXELS = 32 * 32
 MAX_SPRITES_PER_THING = 4096  # OB SpriteExtent.DEFAULT_DATA_SIZE
 
-# Attribute payload table — confirmed against the client's record parser.
 U16_ATTRS = {0x00, 0x09, 0x1A, 0x1D, 0x1E, 0x21, 0x23}
 U32_ATTRS = {0x16, 0x19}
 FLAGS = {1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
          21, 23, 24, 27, 28, 31, 32, 36, 37, 38, 39, 40, 0x28, 0x29}
-# 0x2B is new in the 2026-08-31 build. Its 5-byte payload length was pinned by
-# the exact-EOF identity: L=5 is the only value in 0..32 that makes the dat
-# parse to byte-exact EOF. Re-pin after every client update.
 FIXED_LEN_ATTRS = {0x2B: 5}
 
 
@@ -46,12 +42,14 @@ def parse_dat(data: bytes):
                 pos += 2
             elif a in U32_ATTRS:
                 pos += 4
-            elif a == 0x22:  # market
+            elif a == 0x22:
                 pos += 6
                 n = struct.unpack_from("<H", data, pos)[0]
                 pos += 2 + n + 4
-            elif a == 0x2A:  # 8 x i16 (per-direction offsets)
+            elif a == 0x2A:
                 pos += 16
+            elif a == 0x2C: 
+                pos += 1 + 4 * data[pos]
             elif a in FIXED_LEN_ATTRS:
                 pos += FIXED_LEN_ATTRS[a]
             else:
@@ -68,7 +66,7 @@ def parse_dat(data: bytes):
         n = w * h * layers * px * py * pz * frames
         if n > 65536:
             raise ValueError(f"rid {rid}: bad sprite list size {n}")
-        # sequential read — NO permutation, exactly like the client parser
+        # sequential read, NO permutation...
         sids = list(struct.unpack_from(f"<{n}I", data, pos))
         pos += 4 * n
         return {"w": w, "h": h, "exact": exact, "layers": layers,
@@ -78,7 +76,7 @@ def parse_dat(data: bytes):
     for ci, expected in enumerate(counts):
         recs = []
         for i in range(expected):
-            if pos >= len(data):  # missile header count lies; read-until-EOF
+            if pos >= len(data):  # missile header count lies, read-until-EOF
                 print(f"[!] category {ci}: header says {expected}, file has {len(recs)}")
                 break
             recs.append(parse_record(i))
@@ -234,18 +232,22 @@ def main() -> int:
     cats = parse_dat((SRC_DIR / "things.dat").read_bytes())
     items, creatures, effects, missiles = cats
 
-    # Last 99 item records are outfit data; last 98 creature records are
-    # effect data. Move each block to the front of its real category.
-    # Both sizes are build-specific: 07-22 = 98/98, 08-31 = 99/98. Re-derive
-    # after every client update.
+    # Last 99 item records are outfits, last 98 creatures are
+    # effects, last 99 effect records are missiles.
     OUTFITS_FROM_ITEMS = 99
     EFFECTS_FROM_CREATURES = 98
+    MISSILES_FROM_EFFECTS = 99
     outfits = items[-OUTFITS_FROM_ITEMS:] + creatures[:-EFFECTS_FROM_CREATURES]
     effects = creatures[-EFFECTS_FROM_CREATURES:] + effects
     real_items = items[:-OUTFITS_FROM_ITEMS]
-    print(f"[*] moved {OUTFITS_FROM_ITEMS} outfit records out of items and "
-          f"{EFFECTS_FROM_CREATURES} effect records out of creatures; "
-          f"items={len(real_items)}, outfits={len(outfits)}, effects={len(effects)}")
+    # 99 + the 152 records at EOF = the 251 missiles the header claims.
+    missiles = effects[-MISSILES_FROM_EFFECTS:] + missiles
+    effects = effects[:-MISSILES_FROM_EFFECTS]
+    print(f"[*] moved {OUTFITS_FROM_ITEMS} outfits out of items, "
+          f"{EFFECTS_FROM_CREATURES} effects out of creatures and "
+          f"{MISSILES_FROM_EFFECTS} missiles out of effects; "
+          f"items={len(real_items)}, outfits={len(outfits)}, "
+          f"effects={len(effects)}, missiles={len(missiles)}")
 
     for cat, first in ((real_items, 100), (outfits, 1), (effects, 1), (missiles, 1)):
         for i, rec in enumerate(cat):
