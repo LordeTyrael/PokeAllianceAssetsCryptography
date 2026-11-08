@@ -1,113 +1,42 @@
 # PokeAlliance — Assets & Cryptography Documentation
 
-PokeAlliance is a PokeTibia (OTClient fork, DirectX build). Its client is `PokeAlliance_dx.exe` (x86-64, base `0x140000000`). Unlike PokeXGames' homebrew Salsa20 scheme, PokeAlliance uses standard crypto — **AES-256-GCM + zlib** via an embedded OpenSSL 3.x EVP — and the key is a 32-byte constant in the binary. No dynamic analysis is needed; everything below was verified by decrypting the full installed asset tree (**5,795 files**).
+PokeAlliance is a PokeTibia (OTClient fork, DirectX build). Its client is `PokeAlliance_dx.exe` (x86-64, base `0x140000000`). Unlike PokeXGames' homebrew Salsa20 scheme, PokeAlliance uses standard crypto — **AES-256-GCM + zlib** via an embedded OpenSSL 3.x EVP — and one global 32-byte key covers both the asset tree and the `PKB1` sprite container.
+
+In the last analysis i did, `modules/` shipped `.otmod` manifests and `.lua` scripts as ordinary `PKA1` files. They re gone now, the scripts are inside the signed, packed client, decrypted at startup and handed to `luaL_loadbuffer`. The CDN manifest has no `.lua` or `.otmod`, so `modules/` only holds UI files.
 
 ## 1. The Assets
 
-The installed client ships **5,795 asset files** (~579 MB) under `data/` and `modules/`, all of them AES-256-GCM + zlib. (5,807 files are on disk; 4 `.exe`, 3 `.dll`, 2 `.dmp`, 1 `.log`, 1 `.old` and 1 `.bak` are not assets and are skipped.)
+The installed client ships **7,637 asset files** (~702.7 MB) under `data/` and `modules/`, all AES-256-GCM + zlib except `things.spr`, which is the `PKB1` container (§2). (7,647 files are on disk; 5 `.exe`, 3 `.dll`, 1 `.log` and 1 `.bak` are not assets and are skipped.)
 
 | Extension | Files | Size | What it is |
 |---|---:|---:|---|
-| `.png` | 4,908 | 153.0 MB | UI skins, icons, item/creature images, bitmap font atlases |
-| `.otui` | 259 | 239.7 KB | OTML widget trees — every window and widget in the UI |
-| `.lua` | 230 | 685.6 KB | client core and module scripts (Lua 5.1) |
-| `.otmod` | 120 | 24.3 KB | module manifests — name, `sandboxed`, `scripts`, `load-later` |
-| `.ogg` | 114 | 92.9 MB | sound effects and music |
-| `.frag` | 107 | 43.3 KB | GLSL fragment-shader sources |
-| `.otfont` | 30 | 4.2 KB | font descriptors, both kinds (bitmap and TTF — see below) |
-| `.ttf` | 16 | 3.4 MB | TrueType files loaded via `.otfont` |
-| `.spr` | 3 | 318.5 MB | the sprite atlas — every tile graphic in the game (§3) |
-| `.mp4` | 3 | 9.0 MB | login video, gacha opening, profile background |
-| `.otml` | 2 | 51.5 KB | OTClient Markup Language config trees (see below) |
-| `.rc` | 1 | 83 B | Windows resource script (see below) |
-| `.dat` | 1 | 1.3 MB | object definitions — what every item/creature *is* (§4) |
+| `.png` | 7,065 | 191.8 MB | UI skins, icons, item/creature images, bitmap font atlases |
+| `.otui` | 238 | 287.0 KB | OTML widget trees — every window and widget in the UI |
+| `.ogg` | 133 | 93.3 MB | sound effects and music |
+| `.frag` | 105 | 42.3 KB | GLSL fragment-shader sources |
+| `.svg` | 41 | 11.2 KB | vector profile/wallet/navigation icons |
+| `.otfont` | 30 | 4.3 KB | font descriptors, both kinds (bitmap and TTF — see below) |
+| `.ttf` | 16 | 3.7 MB | TrueType files loaded via `.otfont` |
+| `.mp4` | 2 | 7.6 MB | profile background and video-player clip |
+| `.otml` | 2 | 56.1 KB | OTClient Markup Language config trees (see below) |
+| `.spr` | 1 | 383.6 MB | the sprite atlas — every tile graphic in the game (§3) |
+| `.zip` | 1 | 20.8 MB | `pokemons.zip`, 1,015 PNGs packed as one asset (see below) |
+| `.dat` | 1 | 1.5 MB | object definitions — what every item/creature *is* (§4) |
 | `.otfi` | 1 | 157 B | the loader's format manifest (see below) |
-| **Total** | **5,795** | **579.1 MB** | |
+| `.rc` | 1 | 83 B | Windows resource script (see below) |
+| **Total** | **7,637** | **702.7 MB** | |
 
-- **`things.spr` is one logical file in 3 pieces.** The 3 `.spr` entries above are `things.spr.part1 … part3`, not 3 sprite archives. Decrypt each part independently, then concatenate in numeric order.
+- **`things.spr` is one file now.** The old `.part1 … part3` split is gone; the single `PKB1` container is described in §2.
+- **`.ttf` fonts are now `PKA1`-encrypted**; older builds shipped them raw.
 
 ### The unusual formats
 
-The extensions below are OTClient-specific or one-offs, so here is what each one actually contains (all decrypted).
-
-**`.otfi` — "OTClient Feature Information": the loader's manifest for the dat/spr pair.** It does not hold any game data; it tells the client *which files to open and which dialect of the format to expect*. Full decrypted content:
-
-```
-DatSpr
-  extended: true
-  custom: false
-  transparency: true
-  frame-durations: false
-  frame-groups: false
-  metadata-file: things.dat
-  sprites-file: things.spr
-  otml-file: things.otml
-```
-
-`extended: true` means u32 sprite IDs; `transparency: true` means RGBA sprites; `frame-durations: false` + `frame-groups: false` mean there is no per-frame timing data and no frame-group blocks in the dat. Those four flags are what make the format the "10.98 feature set" (§3, §4, §5).
-
-**`.otml` — "OTClient Markup Language", the client's indentation-based config tree** (same parser family as `.otui`). There are two, and they do completely different jobs:
-
-- `data/cursors/cursors.otml` (179 B) — maps each logical cursor to its image and click point:
-  ```
-  Cursors
-    target:
-      image: targetcursor     # -> data/cursors/targetcursor.png
-      hot-spot: 9 9           #    pixel that registers the click
-  ```
-- `data/things/things.otml` (52.5 KB encrypted → 194 KB plain) — a **per-thing appearance override table**, holding what the dat alone can't express. Sections `creatures` (22 ids), `effects` (341), `missiles` (56) and `items` (20,150), with properties `opacity`, `name-displacement`, `speed-factor`, `sound`, `split-sprite`, `async-animation`, `askuse`, `askmove`, `is-depot` and `not-proprietary`. The `.otfi` above is what tells the loader to read this file alongside `things.dat`.
-
-**`.otmod` — a module manifest.** One per directory under `modules/`. It names the module, lists the Lua scripts to load, and sets the sandbox and load-order behaviour the module manager reads:
-
-```
-Module
-  name: client
-  description: Initialize the client and setups its main window
-  reloadable: false
-  sandboxed: true
-  scripts: [ client ]
-  @onLoad: init()
-  @onUnload: terminate()
-
-  load-later:
-    - client_styles
-    - client_locales
-```
-
-**`.otfont` — a font descriptor, in two flavours.** This is why there are both `.otfont` and `.ttf` files. A bitmap font points at a `.png` glyph atlas; a TTF font names a `family` and maps each style to a `.ttf` file that the font engine opens directly:
-
-```
-# bitmap
-Font
-  name: damas
-  texture: damas              # -> data/fonts/damas.png
-  height: 13
-  glyph-size: 16 16
-  y-offset: -2
-  spacing: 0 -5
-  space-width: 6
-  default: true
-
-# TrueType
-Font
-  type: ttf
-  family: poppins
-  default: true
-  styles:
-    regular:
-      file: poppins-regular   # -> data/fonts/poppins-regular.ttf
-    bold:
-      file: poppins-bold
-      outline-width: 1
-```
-
-**`.rc` — a Windows resource script, and a stale one.** Nothing to do with OTClient; a `.rc` is fed to the Windows resource compiler at build time to embed the application icon into the `.exe`. Full decrypted content:
-
-```
-IDI_ICON1    ICON  DISCARDABLE    "otcicon.ico"
-```
-
-It is a leftover from the client's build: **no `.ico` file ships with the client**, and the asset loader never reads `.rc`. It is encrypted along with everything else simply because it sits in `data/images/ui/`. Safe to ignore.
+- **`.otfi`** — manifest for the dat/spr pair. `extended: true` (u32 sprite IDs), `transparency: true` (RGBA), no frame durations/groups: the 10.98 feature set (§3–§5). Frame timing comes from attribute `0x2C` instead (§4).
+- **`.otml`** — indentation-based config, same parser family as `.otui`. `cursors.otml` maps 7 cursors to images and click points; `things.otml` (194.2 KB plain) is a per-thing override table (opacity, speed, sound, split-sprite, …) for ~20.5k ids.
+- **`.otmod`** — module manifest: name, Lua scripts, sandbox and load order. Older builds only — none ship now (see the note at the top).
+- **`.otfont`** — font descriptor, either a bitmap `.png` atlas or a TTF family with per-style `.ttf` files. That's why both extensions ship.
+- **`.zip`** — `data/images/pokemons.zip` is one `PKA1` asset whose plaintext is a normal ZIP of 1,015 Pokémon PNGs. Decrypt, then unzip.
+- **`.rc`** — stale Windows icon script (`IDI_ICON1 ICON "otcicon.ico"`). No `.ico` ships and the loader ignores it; encrypted only because it sits in `data/images/ui/`.
 
 ## 2. The Encryption
 
@@ -115,11 +44,11 @@ It is a leftover from the client's build: **no `.ico` file ships with the client
 AES-256-GCM → zlib (RFC 1950)
 ```
 
-**Key (32 bytes) = a constant in the binary's `.rdata`** — one global key for the whole tree, no per-file derivation. `init.lua` carries a masked copy of the same constant.
+**Key (32 bytes) = a constant in the binary's `.rdata`** — no per-file derivation, no rotation between builds. The packed binary hides the constant, but the `PKB1` header tag confirms it is unchanged (below).
 
 ### File format
 
-Every asset starts with a `PKA1` header:
+Every asset except `things.spr` starts with a `PKA1` header:
 
 ```
 +0x00   4       "PKA1" magic
@@ -133,13 +62,33 @@ Every asset starts with a `PKA1` header:
 
 The header is **68 bytes when `flags & 1`**, 20 bytes otherwise. **The AAD is the entire header** — that single detail is what makes or breaks the tag check. GCM is a stream cipher, so the payload is not block-aligned. Inflate the plaintext to get the original file.
 
-### `init.lua`
+### `init.lua` (absent in this build)
 
-The only file with `flags & 1`. Its 32-byte key field is `master XOR SHA256(master || salt)` — the same constant, obfuscated. Unmasking it takes the constant as an input, and `init.lua` is itself encrypted with it, so the binary is still the only source.
+The 68-byte path (`flags & 1`) is unused here — no installed asset sets it. Older builds used it so `init.lua` could hide the same key via `master XOR SHA256(master || salt)`.
 
-### `things.spr.partN`
+The *PROBABLE* Themida-packed image shows no plaintext strings, no Lua bytecode and no zlib streams; `.rsrc` is just a 22 KB icon/manifest. All 7,640 CDN files are on disk (1,094 under `/modules/`), so the scripts come from the binary or the login server and stay in memory.
 
-`things.spr` is split into `things.spr.part1 … part3`. Each part is an independent `PKA1` file; decrypt each and concatenate in numeric order to rebuild `things.spr` (1,070,067,591 bytes).
+### `PKB1` — `things.spr`
+
+`things.spr` is one 402,257,209-byte container of 4,379 individually encrypted 262,144-byte blocks, using the **same** `HARD` key:
+
+```
++0x00   4       "PKB1" magic
++0x04   4       version = 1
++0x08   4       blockSize = 0x40000 (262,144)
++0x0C   4       total uncompressed size = 1,147,846,676
++0x14   4       chunk count = 4,379
++0x18   16      blob (not used for decryption)
++0x28   4       dataStart = 0xCD88 (52,616)
++0x30   ...     index: 4,379 x (u32 size, u32 end offset, u32 flags = 0)
++0xCD6C 12      header GCM nonce
++0xCD78 16      header GCM tag (AAD = header[0:0xCD6C], plaintext = empty)
++0xCD88 ...     chunk data
+```
+
+Each chunk is `nonce(12) || AES-256-GCM(zlib(block), HARD) || trailing 16 B`. Skipping `verify()` recovers the zlib stream, and `zlib.decompress()` ignores the trailing 16 bytes. Equivalently, use `AES-256-CTR` with `IV = nonce || 0x00000002` (GCM's first encryption counter). All 4,379 chunks inflate: 4,378 × 262,144 B + a final 180,244 B = exactly 1,147,846,676 bytes.
+
+`AES-256-GCM(HARD, nonce = trailer[0:12], AAD = header[0:0xCD6C], plaintext = "")` verifies against `trailer[12:28]`, proving there is no new key hidden in the packed binary.
 
 ### Decryptor reference
 
@@ -152,38 +101,44 @@ HARD = bytes.fromhex(
 
 data  = open(path, "rb").read()
 flags = int.from_bytes(data[4:8], "little")
-hdr   = 68 if flags & 1 else 20            # only init.lua has the flag
+hdr   = 68 if flags & 1 else 20 
 
 c = AES.new(HARD, AES.MODE_GCM, nonce=data[8:20])
-c.update(data[:hdr])                       # AAD = the whole header
+c.update(data[:hdr])
 plain = zlib.decompress(c.decrypt_and_verify(data[hdr:-16], data[-16:]))
 ```
 
-A complete ready-to-run decryptor implementing this (including the `.partN` reassembly) is included in `decrypt_all.py`:
+Per `PKB1` chunk, after slicing it out with the `+0x30` index:
+
+```python
+chunk = open(chunk_path, "rb").read()
+nonce = chunk[:12]                         
+c = AES.new(HARD, AES.MODE_GCM, nonce=nonce)
+block = zlib.decompress(c.decrypt(chunk[12:-16]))
+```
+
+A complete decryptor for the asset tree is included in `decrypt_all.py`.
 
 ```
 python decrypt_all.py [game_dir] [out_dir]
 ```
 
-### Red herring
-
-An older build carried an "ENC3" handler (XXTEA, constants `0xDEADDEAD`/`0xB00BEEEF`) — **unreachable dead code** (its guard checks a string that is always empty). The `ENC3` magic is gone from the current binary, but the XXTEA core and those constants are still in there. The real scheme is the AES-GCM one above. Don't waste time on it.
-
 ## 3. `things.spr` — Sprite Archive
 
-No per-sprite encryption inside — once reassembled, sprite data is raw RLE.
+No per-sprite encryption inside — once the `PKB1` container is decrypted, sprite data is raw RLE:
 
 ```
 +0x00   u32             signature 0x5D97AB7B
-+0x04   u32             sprite count = 659,664
++0x04   u32             sprite count = 787,675
 +0x08   u32[count]      absolute offsets; entry i-1 = sprite ID i (1-based)
                         entry 0 (sprite ID 1) = 0 (null slot, part of the table)
+                        table ends at 3,150,708 = 8 + 4 × 787,675
         sprite data:    3-byte colorkey (FF 00 FF) + u16 data_size
                         + RLE chunks { u16 transparent, u16 colored,
                                        colored × 4 bytes RGBA }
 ```
 
-Verified on all 535,519 non-null sprites: offsets monotonic, last sprite ends exactly at EOF. Two quirks:
+Verified on all 586,208 non-null sprites: offsets monotonic, last sprite ends exactly at EOF (201,467 offsets are zero). Two quirks:
 
 - **The offset table starts at `+0x08`, not `+0x0C`.** What looks like a "reserved" u32 is sprite ID 1's null entry. Reading from `+0x0C` shifts every sprite by one table entry → chopped tiles and neighbor sprites leaking in. This single off-by-one was the root cause of a long "torn sprites" debugging saga.
 - **Trailing transparent run is omitted**: sprites can decode to fewer than 1024 pixels; the client fills the rest with transparency. ObjectBuilder needs exactly 1024, so converters must append a trailing `(transparent, 0)` chunk.
@@ -192,10 +147,10 @@ Verified on all 535,519 non-null sprites: offsets monotonic, last sprite ends ex
 
 ```
 +0x00   u32   signature 0xBCBCF8F6
-+0x04   u16   items = 50,704    (IDs from 100)
-+0x06   u16   creatures = 3,887 (IDs from 1)
-+0x08   u16   effects = 2,882
-+0x0A   u16   missiles = 251    (lies — only 152 records exist; read to EOF)
++0x04   u16   items = 51,996    (IDs from 100)
++0x06   u16   creatures = 3,998 (IDs from 1)
++0x08   u16   effects = 2,888
++0x0A   u16   missiles = 251    (152 here + 99 at the end of effects)
 +0x0C   records: { attribute bytes … 0xFF } { visual block }
         visual: u8 width, u8 height, [u8 exactSize if w>1 or h>1],
                 u8 layers, patternX, patternY, patternZ, frames,
@@ -203,19 +158,35 @@ Verified on all 535,519 non-null sprites: offsets monotonic, last sprite ends ex
 ```
 
 - **Sprite-ID list order is stock**: `[frames][pz][py][px][layers][h][w]` — the client reads the list sequentially with no permutation. Any "remap" scrambles correct data (the second root cause of the torn-sprites saga).
-- **Custom attribute table** (do NOT trust stock Tibia tables): `0x08`, `0x28`, `0x29` are **flags** here (not payloads); `0x2A` has a fixed **16-byte** payload (8×i16); `0x2B` has a fixed **5-byte** payload. With those, the whole file parses to exact EOF.
-- **No animator bytes anywhere**, even for multi-frame records — the client synthesizes 100 ms phases.
+- **Custom attribute table** (do NOT trust stock Tibia tables): `0x08`, `0x28`, `0x29` are **flags** here (not payloads); `0x2A` has a fixed **16-byte** payload (8×i16); `0x2B` has a fixed **5-byte** payload; `0x2C` is **variable** — `u8 count + count × u32 ms` of frame durations, new in the 2026-11-07 build (one occurrence, count=32, all 100 ms, pinned by exact-EOF parsing). With those, the whole 7,507,301-byte file parses to exact EOF. Re-pin this table after every client update; `0x2C` is exactly what broke the September converter.
+- **No stock animator blocks** in the visual data — the client synthesizes 100 ms phases for multi-frame records; the single `0x2C` above is the only stored timing, and `pka2ob.py` turns it back into a normal 100 ms animator.
+- **Category tails are stored one block early**: the last 99 item records are outfits, the last 98 creature records are effects and the last 99 effect records are missiles. The header counts are correct in aggregate, but a parser reading each count in turn sees only 152 missiles and labels those 99 records as effects. The first ObjectBuilder conversion showed them as effects 2888–2986; they are missiles.
 
 ## 5. ObjectBuilder Conversion
 
-The client format uses the extended/transparency layout (what OTClient labels the 10.98 feature set: u32 sprite IDs, RGBA sprites, no frame-durations/groups). Conversion to Tibia 10.56 extended for ObjectBuilder 0.5.9 is implemented in `pka2ob.py` (expects the decrypted `data/things/`, writes an output directory):
+Conversion to Tibia 10.56 extended for ObjectBuilder 0.6.0 is implemented in `pka2ob.py` (reads `decrypted/data/things/`, writes `objectbuilder/`):
 
-- Signatures → `0x542143B0` (dat) / `0x542143DE` (spr) — already in OB's `versions.xml`, no OB config edits needed.
+- Signatures → `0x542143B0` (dat) / `0x542143DE` (spr) — already in OB 0.6.0's `config/versions.xml` as `10.56`, with `32x32` / `dataSize=4096` in `config/sprites.xml`. No OB config edits needed.
 - All attributes stripped (`0xFF` only); visual data kept. Outfits get the 10.56 frame-group marker; multi-frame records get a synthesized animator (100 ms phases).
-- **No sid remap, no direction flip** — source order is already stock.
-- Sprites copied verbatim + the trailing transparent pad when RLE covers < 1024 px. Offset table read from **+0x08**.
-- **4096 clamp**: records exceeding OB's per-thing sprite limit are clamped by dropping trailing frames.
-- **Category reshuffle**: the last 99 item records (game IDs 50705–50803) are actually **outfit** data (patternX=4 + frames) → moved to the front of outfits; the last 98 creature records (3790–3887) are actually **effect** data → moved to the front of effects. Resulting OB counts: items 50,605 records, outfits 3,888, effects 2,980, missiles 152.
-- Outfit views can be horizontally centered post-conversion by appending shifted copies as new sprites (deduped by content hash) and rewriting outfit sid refs — originals untouched (592,330 → 710,760 sprites, measured on the 2026-07-22 build).
+- **No sid remap, no direction flip** (§4).
+- Sprites copied verbatim + the trailing transparent pad from §3; on the current build 279,773 of the 586,208 non-null sprites need it.
+- **4096 clamp**: records exceeding OB's per-thing sprite limit are clamped by dropping trailing frames (18 records on the current build).
+- **Category reshuffle** (re-derived on the 2026-11-08 build; the old 07-22 OB counts 50,605 / 3,888 / 2,980 / 152 are stale): the three tails from §4 are prepended to outfits, effects and missiles, preserving on-disk order. Resulting OB counts: items 51,897 records (header 51,996), outfits 3,999, effects 2,887, missiles 251.
+- Outfit views *can* be horizontally centered post-conversion by appending shifted copies as new sprites (deduped by content hash) and rewriting outfit sid refs — originals untouched. This is an **optional, unapplied** step; the 592,330 → 710,760 sprite figures are from the 2026-07-22 build and do not describe the delivered 787,675-sprite folder.
 
-Result validated by full OB-layout parse (dat to exact EOF, every sprite exactly 1024 px) and confirmed visually in ObjectBuilder.
+ObjectBuilder needs all three files in **one folder**. `pka2ob.py` writes `objectbuilder/` with `Tibia.dat` (8,297,398 B), `Tibia.spr` (1,148,965,768 B) and `things.otfi` (255 B). OB hardcodes the `Tibia.*` names and scans the folder for the `.otfi`.
+```
+DatSpr
+  extended: true
+  transparency: true
+  frame-durations: true
+  frame-groups: true
+  metadata-controller: default
+  attribute-server: tfs1.4
+  metadata-file: Tibia.dat
+  sprites-file: Tibia.spr
+  sprite-size: 32
+  sprite-data-size: 4096
+```
+
+Result validated on the current build by a full independent OB-layout parse: 51,897 / 3,999 / 2,887 / 251 physical records land on byte 8,297,398 == file size, max sprite ID 787,675 == spr count, all 586,208 non-null sprites exactly 1024 px and contiguous to EOF.
