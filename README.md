@@ -10,7 +10,7 @@ The installed client ships **7,637 asset files** (~702.7 MB) under `data/` and `
 
 | Extension | Files | Size | What it is |
 |---|---:|---:|---|
-| `.png` | 7,065 | 191.8 MB | UI skins, icons, item/creature images, bitmap font atlases |
+| `.png` | 7,065 | 191.8 MB | UI, UX, icons, itens/pokemons images, bitmap font atlases |
 | `.otui` | 238 | 287.0 KB | OTML widget trees — every window and widget in the UI |
 | `.ogg` | 133 | 93.3 MB | sound effects and music |
 | `.frag` | 105 | 42.3 KB | GLSL fragment-shader sources |
