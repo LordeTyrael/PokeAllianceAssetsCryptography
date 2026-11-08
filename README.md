@@ -190,5 +190,6 @@ DatSpr
 ```
 
 Result validated on the current build by a full independent OB-layout parse: 51,897 / 3,999 / 2,887 / 251 physical records land on byte 8,297,398 == file size, max sprite ID 787,675 == spr count, all 586,208 non-null sprites exactly 1024 px and contiguous to EOF.
+
 Proof: https://prnt.sc/IzJrBaan0TvK
 
