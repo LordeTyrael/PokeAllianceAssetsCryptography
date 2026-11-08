@@ -9,7 +9,7 @@ from pathlib import Path
 SRC_DIR = Path("decrypted/data/things")
 OUT_DIR = Path("objectbuilder")
 
-DAT_SIGNATURE = 0x542143B0  # stock 10.56
+DAT_SIGNATURE = 0x542143B0 # stock 10.56, registered in OB 0.6.0 versions.xml
 SPR_SIGNATURE = 0x542143DE
 SRC_SPR_SIGNATURE = 0x5D97AB7B
 SRC_DAT_SIGNATURE = 0xBCBCF8F6
@@ -42,14 +42,14 @@ def parse_dat(data: bytes):
                 pos += 2
             elif a in U32_ATTRS:
                 pos += 4
-            elif a == 0x22:
+            elif a == 0x22:  #market
                 pos += 6
                 n = struct.unpack_from("<H", data, pos)[0]
                 pos += 2 + n + 4
             elif a == 0x2A:
                 pos += 16
             elif a == 0x2C: 
-                pos += 1 + 4 * data[pos]
+                pos += 1 + 4 * data[pos]  # all 100 ms here, write_record synthesizes them
             elif a in FIXED_LEN_ATTRS:
                 pos += FIXED_LEN_ATTRS[a]
             else:
