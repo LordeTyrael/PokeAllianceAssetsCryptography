@@ -2,7 +2,7 @@
 
 PokeAlliance is a PokeTibia (OTClient fork, DirectX build). Its client is `PokeAlliance_dx.exe` (x86-64, base `0x140000000`). Unlike PokeXGames' homebrew Salsa20 scheme, PokeAlliance uses standard crypto — **AES-256-GCM + zlib** via an embedded OpenSSL 3.x EVP — and one global 32-byte key covers both the asset tree and the `PKB1` sprite container.
 
-In the last analysis i did, `modules/` shipped `.otmod` manifests and `.lua` scripts as ordinary `PKA1` files. They re gone now, the scripts are inside the signed, packed client, decrypted at startup and handed to `luaL_loadbuffer`. The CDN manifest has no `.lua` or `.otmod`, so `modules/` only holds UI files.
+In the last analysis i did, modules/ shipped .otmod manifests and .lua scripts as ordinary PKA1 files. They're gone now but they did not move into the client. The Nov 6 build is a native C++ port: the module logic was rewritten in C++, no Lua interpreter is linked statically or dynamically, and there is no luaL_loadbuffer to hand anything to. Dumping the 98.8 MB unpacked image and taking nine whole-process snapshots across a real login returns zero Lua literals, zero bytecode headers, no lua/luajit DLL, and no .lua, .luac or .otmod file ever opened. The CDN manifest has no .lua or .otmod, so modules/ only holds UI files (.otui/.png).
 
 ## 1. The Assets
 
